@@ -40,12 +40,15 @@ import net.sf.l2j.gameserver.model.actor.instance.GrandBoss;
 import net.sf.l2j.gameserver.model.actor.instance.OlympiadManagerNpc;
 import net.sf.l2j.gameserver.model.item.DropCategory;
 import net.sf.l2j.gameserver.model.item.DropData;
+import net.sf.l2j.gameserver.model.item.instance.ItemInstance;
 import net.sf.l2j.gameserver.model.item.kind.Item;
 import net.sf.l2j.gameserver.model.olympiad.OlympiadManager;
 import net.sf.l2j.gameserver.model.spawn.ASpawn;
 import net.sf.l2j.gameserver.network.SystemMessageId;
 import net.sf.l2j.gameserver.network.serverpackets.ActionFailed;
+import net.sf.l2j.gameserver.network.serverpackets.ExAutoSoulShot;
 import net.sf.l2j.gameserver.network.serverpackets.NpcHtmlMessage;
+import net.sf.l2j.gameserver.network.serverpackets.SystemMessage;
 import net.sf.l2j.gameserver.scripting.QuestState;
 import net.sf.l2j.gameserver.skills.AbstractEffect;
 import net.sf.l2j.gameserver.skills.L2Skill;
@@ -121,6 +124,98 @@ public final class RequestBypassToServer extends L2GameClientPacket
 			intid =  Integer.parseInt(st.nextToken()); // Get skill level from second token int 
 			level = Integer . parseInt (st.nextToken()); // Dispel skill effect on current character 
 			player.dispelSkillEffect(intid,level); 
+		}
+		if (_command.startsWith("RequestAutoShot: ShotID="))
+		{
+			String[] parts = _command.split("=");
+			int shotId = Integer.parseInt(parts[1].split(" ")[0]); // Obtener solo el valor de ShotID
+			int bEnable = Integer.parseInt(parts[2].trim()); // Obtener el valor de bEnable y eliminar los espacios en blanco
+			
+			if (!player.isInStoreMode() && player.getActiveRequester() == null && !player.isDead())
+			{
+				ItemInstance item = player.getInventory().getItemByItemId(shotId);
+				if (item == null)
+					return;
+				
+				if (bEnable == 1)
+				{
+					
+					// Fishingshots are not automatic on retail
+					if (shotId < 6535 || shotId > 6540)
+					{
+						// Attempt to charge first shot on activation
+						if (shotId == 6645 || shotId == 6646 || shotId == 6647)
+						{
+							if (player.getSummon() != null) // if (player.getPet() != null)
+							{
+								
+								if (shotId == 6645)
+								{
+									if (player.getSummon().getSoulShotsPerHit() > item.getCount())//getPet().getSoulShotsPerHit() > item.getCount())
+									{
+										player.sendPacket(SystemMessageId.NOT_ENOUGH_SOULSHOTS_FOR_PET);
+										return;
+									}
+								}
+								else
+								{
+									if (player.getSummon().getSpiritShotsPerHit() > item.getCount()) //.getPet().getSpiritShotsPerHit() > item.getCount())
+									{
+										player.sendPacket(SystemMessageId.NOT_ENOUGH_SPIRITSHOTS_FOR_PET);
+										return;
+									}
+								}
+								
+								// start the auto soulshot use
+								player.addAutoSoulShot(shotId);
+								player.sendPacket(new ExAutoSoulShot(shotId, bEnable));
+								//player.sendPacket(player.getSystemMessage(SystemMessageId.USE_OF_S1_WILL_BE_AUTO).addItemName(shotId));
+								player.sendPacket(SystemMessage.getSystemMessage(SystemMessageId.USE_OF_S1_WILL_BE_AUTO).addItemName(shotId));
+								player.rechargeShots(true, true);
+								player.getSummon().rechargeShots(true, true); //getPet().rechargeShots(true, true);
+								
+								
+							}
+							else
+								player.sendPacket(SystemMessageId.NO_SERVITOR_CANNOT_AUTOMATE_USE);
+						}
+						else
+						{
+							
+							// Activate the visual effect
+							player.addAutoSoulShot(shotId);
+							player.sendPacket(new ExAutoSoulShot(shotId, bEnable));
+							
+							// start the auto soulshot use
+							//if (player.getActiveWeaponItem() != player.getFistsWeaponItem() && item.getItem().getCrystalType() == player.getActiveWeaponItem().getCrystalType())
+							if (player.getActiveWeaponInstance() != null && item.getItem().getCrystalType() == player.getActiveWeaponItem().getCrystalType())	
+								player.rechargeShots(true, true);
+							
+							else
+							{
+								if ((shotId >= 2509 && shotId <= 2514) || (shotId >= 3947 && shotId <= 3952) || shotId == 5790)
+									player.sendPacket(SystemMessageId.SPIRITSHOTS_GRADE_MISMATCH);
+								else
+									player.sendPacket(SystemMessageId.SOULSHOTS_GRADE_MISMATCH);
+							}
+							
+							// In both cases (match/mismatch), that message is displayed.
+							player.sendPacket(SystemMessage.getSystemMessage(SystemMessageId.USE_OF_S1_WILL_BE_AUTO).addItemName(shotId));
+							
+							
+						}
+					}
+				}
+				else if (bEnable == 0)
+				{
+					// cancel the auto soulshot use
+					player.removeAutoSoulShot(shotId);
+					player.sendPacket(new ExAutoSoulShot(shotId, bEnable));
+					player.sendPacket(SystemMessage.getSystemMessage(SystemMessageId.AUTO_USE_OF_S1_CANCELLED).addItemName(shotId));
+					
+					
+				}
+			}
 		}
 		else if (_command.startsWith("player_help "))
 		{
